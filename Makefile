@@ -1,0 +1,88 @@
+APP_NAME = random
+CL       = sbcl
+CL_OPTS  = --noinform --no-sysinit --no-userinit
+LISP_SRC = $(wildcard src/*lisp) \
+             random.asd
+BUILDDIR = build
+LIBS     = $(BUILDDIR)/libs.stamp
+QLDIR    = $(BUILDDIR)/quicklisp
+MANIFEST = $(BUILDDIR)/manifest.ql
+APP      = $(BUILDDIR)/bin/$(APP_NAME)
+LOG      = $(BUILDDIR)/build.log
+BUILDAPP = $(BUILDDIR)/bin/buildapp.sbcl$
+CL_OPTS  = --noinform --no-sysinit --no-userinit
+
+all: $(APP) ;
+
+$(QLDIR)/setup.lisp:
+	mkdir -p $(BUILDDIR)
+	curl -o $(BUILDDIR)/quicklisp.lisp http://beta.quicklisp.org/quicklisp.lisp
+	$(CL) $(CL_OPTS) --load $(BUILDDIR)/quicklisp.lisp \
+             --eval '(quicklisp-quickstart:install :path "$(BUILDDIR)/quicklisp")' \
+             --eval '(quit)'
+
+quicklisp: $(QLDIR)/setup.lisp ;
+
+
+$(LIBS): $(QLDIR)/setup.lisp
+	$(CL) $(CL_OPTS) --load $(QLDIR)/setup.lisp \
+		--eval '(ql:quickload "cl-argparse")' \
+		--eval '(ql:quickload "uuid")' \
+		--eval '(ql:quickload "ironclad")' \
+		--eval '(ql:quickload "arrow-macros")' \
+		--eval '(ql:quickload "random")' \
+		--eval '(quit)'
+	touch $@
+
+libs: $(LIBS) ;
+
+cleanlibs:
+	rm -rf $(QLDIR)/setup.lisp
+
+
+$(MANIFEST): $(LIBS)
+	$(CL) $(CL_OPTS) --load $(QLDIR)/setup.lisp \
+             --eval '(ql:write-asdf-manifest-file "$(MANIFEST)")' \
+             --eval '(quit)'
+
+manifest: $(MANIFEST) ;
+
+
+$(BUILDAPP): $(QLDIR)/setup.lisp
+	mkdir -p $(BUILDDIR)/bin
+	$(CL) $(CL_OPTS) --load $(QLDIR)/setup.lisp \
+             --eval '(ql:quickload "buildapp")' \
+             --eval '(buildapp:build-buildapp "$@")' \
+             --eval '(quit)'
+
+buildapp: $(BUILDAPP) ;
+
+
+$(APP): $(MANIFEST) $(BUILDAPP) $(LISP_SRC)
+	mkdir -p $(BUILDDIR)/bin
+	$(BUILDAPP) \
+		--logfile $(LOG) \
+        $(BUILDAPP_OPTS) \
+        --sbcl $(CL) \
+        --asdf-path . \
+        --asdf-tree $(QLDIR)/local-projects \
+        --manifest-file $(MANIFEST) \
+        --asdf-tree $(QLDIR)/dists \
+        --asdf-path . \
+        --load-system $(APP_NAME) \
+        --entry $(APP_NAME):main \
+	    --compress-core \
+        --output $@
+
+
+random: $(APP) ;
+
+cleanapp:
+	rm -rf $(APP)
+
+run: $(APP)
+	./$(APP)
+
+clean:
+	rm -rf $(LIBS) $(QLDIR) $(MANIFEST) $(BUILDAPP) $(APP)
+
