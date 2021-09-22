@@ -28,7 +28,7 @@
      ))
   (:report
     (lambda (c stream)
-      (format stream "got invalid number range [~a,~a] start must be less than end" (start c) (end c)))))
+      (format stream "got invalid number range [~a,~a] range must be positive and start must be less than end" (start c) (end c)))))
 
 
 (defun get-parse-int (pargvs name)
@@ -58,6 +58,9 @@
                               (lambda (acc b) (+ acc (if b 1 0)))
                               (list as-hex as-uhex as-b64 as-ub64)
                               :initial-value 0)))
+    (log:debug
+      "byte format flags: as-hex: ~a, as-uhex ~a, as-b64 ~a, as-ub64 ~a"
+      as-hex as-uhex as-b64 as-ub64)
     (->
       (cond
         ((> format-flag-count 1)
@@ -74,17 +77,28 @@
          (format nil "~{~a ~}" bytes))))))
 
 
+(defun num-bytes-for-number (n)
+    (-> n
+        (+ 1)   ; - so we don't have to handle 'zero'
+                ;   and so math is done correctly, e.g.
+                ;   (log 256 2) = 8, but should be 9
+                ;   to be 2 bytes instead of 1
+        (log 2) ; - number of bits
+        (/ 8)   ; - number of bytes, round up
+        (ceiling)))
+
 (defun int-to-bytes (n)
-  (let* ((n-bytes (-> n (log 2) (/ 8)))
-         (offsets (loop for i from 0 to n-bytes collect (* 8 i)))
+  (let* ((n-bytes (num-bytes-for-number n))
+         (offsets (loop for i from 0 to (- n-bytes 1) collect (* 8 i)))
          (bytes (map 'list (lambda (offset) (ldb (byte 8 offset) n)) offsets)))
-    (format t "~a || ~a ~%" offsets bytes)
+    (log:debug "number: ~a -> ~a bytes -> offsets ~a:  ~a" n n-bytes offsets bytes)
     (coerce bytes 'vector)))
+
 
 (defun generate-number (pargvs)
   (let ((start (get-parse-int pargvs "number-start"))
         (end (get-parse-int pargvs "number-end")))
-    (if (not (< start end))
+    (if (or (not (< start end)) (< start 0) (< end 0))
         (error 'invalid-number-range :start start :end end)
         (->> (- end start)  ;; - get the range starting from 0
              (+ 1)          ;; - strong-random's upper bound is exclusive,
@@ -109,13 +123,9 @@
 
 (defun generate-bytes (pargvs)
    (let* ((c (get-parse-int pargvs "count"))
-          (bytes (crypto:random-data c))
-         )
+          (bytes (crypto:random-data c)))
     (->> (format-bytes bytes pargvs)
-         (format t "~a~%")
-         )
-     )
-  )
+         (format t "~a~%"))))
 
 
 (defun create-generate-number-parser ()
@@ -187,38 +197,30 @@
                              :default #'generate-bytes)))
 
 
-(eval-when
-  (:compile-toplevel)
-(defun to-grip-level (level)
-  (let ((slevel (string-upcase (string level))))
-    (cond
-      ((string-equal slevel "DEBUG") 'grip.level:+debug+)
-      ((string-equal slevel "INFO") 'grip.level:+info+)
-      ((string-equal slevel "WARNING") 'grip.level:+warning+)
-      ((string-equal slevel "ERROR") 'grip.level:+error+)
-      (t 'grip.level:+error+)
-      ))))
-
-(defmacro l (format-str &rest args &key (level :info) &allow-other-keys)
-  `(grip:log> ,(to-grip-level level) (grip.message:new-message ,format-str :args ',args)))
+(defun to-log-level (s)
+  (cond
+    ((string-equal s "TRACE") :trace)
+    ((string-equal s "DEBUG") :debug)
+    ((string-equal s "INFO") :info)
+    ((string-equal s "WARN") :warn)
+    ((string-equal s "ERROR") :error)
+    ((string-equal s "FATAL") :fatal)
+    (t :error)))
 
 (defun get-log-level ()
   (-> (sb-ext:posix-getenv "LOG_LEVEL")
       ((lambda (e) (if e (string-upcase e) nil)))
       (str:trim)
-      (to-grip-level)))
+      (to-log-level)))
 
 (defun main (argvs)
   (handler-case
     (progn
-      (setf grip:*default-logger* (make-instance 'grip.logger:stream-journal
-         :name "random"
-         ;:threshold 'grip.level:+info+
-         :output-target *error-output*
-         ))
+      (log:config (get-log-level))
+      (log:config :sane2)
+      (log:config :nofile)
+      (log:debug "args: ~a" argvs)
       (let ((pargvs (cl-argparse:parse (create-parser) (cdr argvs))))
-        ;(l "args: ~a" pargvs)
-        (l "hey")
         (funcall (cl-argparse:get-value "func" pargvs) pargvs)))
 
     ;; cli args error
@@ -226,16 +228,14 @@
       (e)
       (progn
         (format *error-output* "~a~%" e)
-        (sb-ext:quit :unix-status 1)
-        ))
+        (sb-ext:quit :unix-status 1)))
 
     ;; C-c
     (sb-sys:interactive-interrupt
       ()
       (progn
         (format t "~&Aborting...~%")
-        (sb-ext:quit :unix-status 1)
-        ))
+        (sb-ext:quit :unix-status 1)))
 
     ;; everything else
     (error
@@ -253,6 +253,4 @@
     (declare (ignore old-hook))
     (format *error-output* "~&Unhandled error: ~a~%" c)
     (sb-ext:quit :unix-status 1)))
-
-
 

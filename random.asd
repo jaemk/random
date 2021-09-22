@@ -8,8 +8,7 @@
       "ironclad"
       "arrow-macros"
       "cl-base64"
-      "cl-grip"
-      "cl-grip/ext"
+      "log4cl"
       "str"
       )
   :components ((:module "src"
