@@ -2,7 +2,16 @@
   :version "0.1.0"
   :author "James Kominick"
   :license "MIT"
-  :depends-on ("cl-argparse" "uuid" "ironclad" "arrow-macros")
+  :depends-on (
+      "cl-argparse"
+      "uuid"
+      "ironclad"
+      "arrow-macros"
+      "cl-base64"
+      "cl-grip"
+      "cl-grip/ext"
+      "str"
+      )
   :components ((:module "src"
                 :components
                 ((:file "main"))))

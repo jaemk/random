@@ -1,5 +1,5 @@
 (defpackage random
-  (:use :cl :cl-argparse :arrow-macros :uuid))
+  (:use :cl :arrow-macros))
 (in-package :random)
 
 
@@ -40,6 +40,46 @@
           (c)
           (error 'invalid-number :str str :cause c)))))
 
+(defun needs-formatting-p (pargvs)
+  (or
+    (cl-argparse:get-value "as-hex" pargvs)
+    (cl-argparse:get-value "as-uhex" pargvs)
+    (cl-argparse:get-value "as-b64" pargvs)
+    (cl-argparse:get-value "as-ub64" pargvs)))
+
+
+(defun format-bytes (bytes pargvs)
+  (let* ((as-hex (cl-argparse:get-value "as-hex" pargvs))
+         (as-uhex (cl-argparse:get-value "as-uhex" pargvs))
+         (as-b64 (cl-argparse:get-value "as-b64" pargvs))
+         (as-ub64 (cl-argparse:get-value "as-ub64" pargvs))
+         (bytes (coerce bytes 'list))
+         (format-flag-count (reduce
+                              (lambda (acc b) (+ acc (if b 1 0)))
+                              (list as-hex as-uhex as-b64 as-ub64)
+                              :initial-value 0)))
+    (->
+      (cond
+        ((> format-flag-count 1)
+          (progn (format t "TOO MANY FORMAT FLAGS~%") "error"))
+        (as-hex
+          (format nil "~(~{~2,'0x~}~)" bytes))
+        (as-uhex
+          (format nil "~:@(~{~2,'0x~}~)" bytes))
+        (as-b64
+          (cl-base64:usb8-array-to-base64-string (coerce bytes 'vector)))
+        (as-ub64
+          (cl-base64:usb8-array-to-base64-string (coerce bytes 'vector) :uri t))
+        (t
+         (format nil "~{~a ~}" bytes))))))
+
+
+(defun int-to-bytes (n)
+  (let* ((n-bytes (-> n (log 2) (/ 8)))
+         (offsets (loop for i from 0 to n-bytes collect (* 8 i)))
+         (bytes (map 'list (lambda (offset) (ldb (byte 8 offset) n)) offsets)))
+    (format t "~a || ~a ~%" offsets bytes)
+    (coerce bytes 'vector)))
 
 (defun generate-number (pargvs)
   (let ((start (get-parse-int pargvs "number-start"))
@@ -51,20 +91,31 @@
                             ;;   but we want our range to be inclusive
              (crypto:strong-random)
              (+ start)      ;; - add back the starting offset
+             ((lambda (n)
+                (if (needs-formatting-p pargvs)
+                  (format-bytes (int-to-bytes n) pargvs)
+                  n)))
              (format t "~a~%")))))
 
 
 (defun generate-uuid (pargvs)
-  (let ((hex (cl-argparse:get-value "as-hex" pargvs))
-        (lower (cl-argparse:get-value "as-lower" pargvs))
-        (upper (cl-argparse:get-value "as-upper" pargvs))
-        (id (uuid::make-v4-uuid)))
-    (->> id
-         ((lambda (id) (if hex (format nil "~{~x~}" (coerce (uuid:uuid-to-byte-array id) 'list)) id)))
-         ((lambda (id) (if lower (format nil "~(~a~)" id) id)))
-         ((lambda (id) (if upper (format nil "~:@(~a~)" id) id)))
+  (let ((id (uuid::make-v4-uuid)))
+    (->>
+      (if (needs-formatting-p pargvs)
+        (format-bytes (uuid:uuid-to-byte-array id) pargvs)
+        id)
+      (format t "~a~%"))))
+
+
+(defun generate-bytes (pargvs)
+   (let* ((c (get-parse-int pargvs "count"))
+          (bytes (crypto:random-data c))
+         )
+    (->> (format-bytes bytes pargvs)
          (format t "~a~%")
-         )))
+         )
+     )
+  )
 
 
 (defun create-generate-number-parser ()
@@ -88,37 +139,87 @@
 
 (defun create-generate-uuid-parser ()
   (cl-argparse:create-sub-parser (uuid "generate a uuid")
-    (cl-argparse:add-flag uuid
-                          :short "x"
-                          :long "hex"
-                          :help "hex encode the resulting uuid"
-                          :var "as-hex")
-    (cl-argparse:add-flag uuid
-                          :short "l"
-                          :long "lower"
-                          :help "lowercase the resulting uuid"
-                          :var "as-lower")
-    (cl-argparse:add-flag uuid
-                          :short "u"
-                          :long "upper"
-                          :help "uppercase the resulting uuid"
-                          :var "as-upper")
     (cl-argparse:add-default uuid
                              :var "func"
                              :default #'generate-uuid)))
+
+
+(defun create-generate-bytes-parser ()
+  (cl-argparse:create-sub-parser (bytes "generate random bytes")
+    (cl-argparse:add-optional bytes
+                              :short "n"
+                              :long "count"
+                              :help "the number of bytes to generate"
+                              :default "10"
+                              :var "count")
+    (cl-argparse:add-default bytes
+                             :var "func"
+                             :default #'generate-bytes)))
 
 
 (defun create-parser ()
   (cl-argparse:create-main-parser (main-parser "generate random things")
     (cl-argparse:add-subparser main-parser (create-generate-number-parser))
     (cl-argparse:add-subparser main-parser (create-generate-uuid-parser))
-    ))
+    (cl-argparse:add-subparser main-parser (create-generate-bytes-parser))
+    (cl-argparse:add-flag main-parser
+                          :short "x"
+                          :long "hex"
+                          :help "hex encode the resulting bytes, lowercase"
+                          :var "as-hex")
+    (cl-argparse:add-flag main-parser
+                          :short "X"
+                          :long "hex-upper"
+                          :help "hex encode the resulting bytes, uppercase"
+                          :var "as-uhex")
+    (cl-argparse:add-flag main-parser
+                          :short "b"
+                          :long "base64"
+                          :help "base64 encode the resulting bytes"
+                          :var "as-b64")
+    (cl-argparse:add-flag main-parser
+                          :short "B"
+                          :long "uri-base64"
+                          :help "base64 encode the resulting bytes (uri safe)"
+                          :var "as-ub64")
+    (cl-argparse:add-default main-parser
+                             :var "func"
+                             :default #'generate-bytes)))
 
+
+(eval-when
+  (:compile-toplevel)
+(defun to-grip-level (level)
+  (let ((slevel (string-upcase (string level))))
+    (cond
+      ((string-equal slevel "DEBUG") 'grip.level:+debug+)
+      ((string-equal slevel "INFO") 'grip.level:+info+)
+      ((string-equal slevel "WARNING") 'grip.level:+warning+)
+      ((string-equal slevel "ERROR") 'grip.level:+error+)
+      (t 'grip.level:+error+)
+      ))))
+
+(defmacro l (format-str &rest args &key (level :info) &allow-other-keys)
+  `(grip:log> ,(to-grip-level level) (grip.message:new-message ,format-str :args ',args)))
+
+(defun get-log-level ()
+  (-> (sb-ext:posix-getenv "LOG_LEVEL")
+      ((lambda (e) (if e (string-upcase e) nil)))
+      (str:trim)
+      (to-grip-level)))
 
 (defun main (argvs)
   (handler-case
+    (progn
+      (setf grip:*default-logger* (make-instance 'grip.logger:stream-journal
+         :name "random"
+         ;:threshold 'grip.level:+info+
+         :output-target *error-output*
+         ))
       (let ((pargvs (cl-argparse:parse (create-parser) (cdr argvs))))
-        (funcall (cl-argparse:get-value "func" pargvs) pargvs))
+        ;(l "args: ~a" pargvs)
+        (l "hey")
+        (funcall (cl-argparse:get-value "func" pargvs) pargvs)))
 
     ;; cli args error
     (cl-argparse:cancel-parsing-error
@@ -141,8 +242,8 @@
       (e)
       (progn
         (format *error-output* "~&Error: ~a~%" e)
-        (sb-ext:quit :unix-status 1)
-        ))))
+        (sb-ext:quit :unix-status 1)))
+    ))
 
 
 ;; handle any errors if they aren't cause by the catch-all handler in 'main
@@ -154,5 +255,4 @@
     (sb-ext:quit :unix-status 1)))
 
 
-;; (as-> (crypto:random-data 4) v (coerce v 'list) (format nil "~(~{~x~}~)" v))
 

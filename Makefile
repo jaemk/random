@@ -30,6 +30,10 @@ $(LIBS): $(QLDIR)/setup.lisp
 		--eval '(ql:quickload "uuid")' \
 		--eval '(ql:quickload "ironclad")' \
 		--eval '(ql:quickload "arrow-macros")' \
+		--eval '(ql:quickload "cl-base64")' \
+		--eval '(ql:quickload "cl-grip")' \
+		--eval '(ql:quickload "cl-grip/ext")' \
+		--eval '(ql:quickload "str")' \
 		--eval '(ql:quickload "random")' \
 		--eval '(quit)'
 	touch $@
@@ -71,7 +75,7 @@ $(APP): $(MANIFEST) $(BUILDAPP) $(LISP_SRC)
         --asdf-path . \
         --load-system $(APP_NAME) \
         --entry $(APP_NAME):main \
-	    --compress-core \
+		--compress-core \
         --output $@
 
 
