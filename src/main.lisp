@@ -30,6 +30,14 @@
     (lambda (c stream)
       (format stream "got invalid number range [~a,~a] range must be positive and start must be less than end" (start c) (end c)))))
 
+(define-condition too-many-format-flags (error)
+  ((flag-count
+     :initarg :count
+     :reader flag-count))
+  (:report
+    (lambda (c stream)
+      (format stream "too many format-flags specified (~a)" (flag-count c)))))
+
 
 (defun get-parse-int (pargvs name)
   (let ((str (cl-argparse:get-value name pargvs)))
@@ -64,7 +72,7 @@
     (->
       (cond
         ((> format-flag-count 1)
-          (progn (format t "TOO MANY FORMAT FLAGS~%") "error"))
+          (error 'too-many-format-flags :count format-flag-count))
         (as-hex
           (format nil "~(~{~2,'0x~}~)" bytes))
         (as-uhex
