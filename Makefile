@@ -12,6 +12,12 @@ LOG      = $(BUILDDIR)/build.log
 BUILDAPP = $(BUILDDIR)/bin/buildapp.sbcl$
 CL_OPTS  = --noinform --no-sysinit --no-userinit
 
+ifeq ($(COMPRESS_CORE),true)
+	COMPRESS = --compress-core
+else
+	COMPRESS =
+endif
+
 all: $(APP) ;
 
 $(QLDIR)/setup.lisp:
@@ -31,8 +37,7 @@ $(LIBS): $(QLDIR)/setup.lisp
 		--eval '(ql:quickload "ironclad")' \
 		--eval '(ql:quickload "arrow-macros")' \
 		--eval '(ql:quickload "cl-base64")' \
-		--eval '(ql:quickload "cl-grip")' \
-		--eval '(ql:quickload "cl-grip/ext")' \
+		--eval '(ql:quickload "log4cl")' \
 		--eval '(ql:quickload "str")' \
 		--eval '(ql:quickload "random")' \
 		--eval '(quit)'
@@ -75,7 +80,7 @@ $(APP): $(MANIFEST) $(BUILDAPP) $(LISP_SRC)
         --asdf-path . \
         --load-system $(APP_NAME) \
         --entry $(APP_NAME):main \
-		--compress-core \
+		$(COMPRESS) \
         --output $@
 
 
