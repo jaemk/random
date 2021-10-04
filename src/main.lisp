@@ -67,8 +67,8 @@
                               (list as-hex as-uhex as-b64 as-ub64)
                               :initial-value 0)))
     (log:debug
-      "byte format flags: as-hex: ~a, as-uhex ~a, as-b64 ~a, as-ub64 ~a"
-      as-hex as-uhex as-b64 as-ub64)
+      "bytes: ~a, format flags: as-hex: ~a, as-uhex ~a, as-b64 ~a, as-ub64 ~a"
+      bytes as-hex as-uhex as-b64 as-ub64)
     (->
       (cond
         ((> format-flag-count 1)
@@ -95,9 +95,10 @@
         (/ 8)   ; - number of bytes, round up
         (ceiling)))
 
-(defun int-to-bytes (n)
+
+(defun int->bytes (n)
   (let* ((n-bytes (num-bytes-for-number n))
-         (offsets (loop for i from 0 to (- n-bytes 1) collect (* 8 i)))
+         (offsets (or (loop for i from 0 to (- n-bytes 1) collect (* 8 i)) '(0)))
          (bytes (map 'list (lambda (offset) (ldb (byte 8 offset) n)) offsets)))
     (log:debug "number: ~a -> ~a bytes -> offsets ~a:  ~a" n n-bytes offsets bytes)
     (coerce bytes 'vector)))
@@ -115,7 +116,7 @@
              (+ start)      ;; - add back the starting offset
              ((lambda (n)
                 (if (needs-formatting-p pargvs)
-                  (format-bytes (int-to-bytes n) pargvs)
+                  (format-bytes (int->bytes n) pargvs)
                   n)))
              (format t "~a~%")))))
 
