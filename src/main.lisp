@@ -30,6 +30,7 @@
     (lambda (c stream)
       (format stream "got invalid number range [~a,~a] range must be positive and start must be less than end" (start c) (end c)))))
 
+
 (define-condition too-many-format-flags (error)
   ((flag-count
      :initarg :count
@@ -48,12 +49,16 @@
           (c)
           (error 'invalid-number :str str :cause c)))))
 
+
 (defun needs-formatting-p (pargvs)
   (or
     (cl-argparse:get-value "as-hex" pargvs)
     (cl-argparse:get-value "as-uhex" pargvs)
     (cl-argparse:get-value "as-b64" pargvs)
     (cl-argparse:get-value "as-ub64" pargvs)))
+
+
+(defun ->byte-vec (l) (coerce l '(vector (unsigned-byte 8))))
 
 
 (defun format-bytes (bytes pargvs)
@@ -78,9 +83,9 @@
         (as-uhex
           (format nil "~:@(~{~2,'0x~}~)" bytes))
         (as-b64
-          (cl-base64:usb8-array-to-base64-string (coerce bytes 'vector)))
+          (cl-base64:usb8-array-to-base64-string (->byte-vec bytes)))
         (as-ub64
-          (cl-base64:usb8-array-to-base64-string (coerce bytes 'vector) :uri t))
+          (cl-base64:usb8-array-to-base64-string (->byte-vec bytes) :uri t))
         (t
          (format nil "~{~a ~}" bytes))))))
 
@@ -216,11 +221,13 @@
     ((string-equal s "FATAL") :fatal)
     (t :error)))
 
+
 (defun get-log-level ()
   (-> (sb-ext:posix-getenv "LOG_LEVEL")
       ((lambda (e) (if e (string-upcase e) nil)))
       (str:trim)
       (to-log-level)))
+
 
 (defun main (argvs)
   (handler-case
