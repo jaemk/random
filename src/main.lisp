@@ -2,7 +2,6 @@
   (:use :cl :arrow-macros))
 (in-package :random)
 
-(declaim (optimize (speed 3)))
 
 (define-condition invalid-number (error)
   ((str
